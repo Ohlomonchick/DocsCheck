@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "docs-check"
+version = "0.0.1"
+description = ""
+authors = ["Dmitry Proskurin <proskurin.dima16@gmail.com>"]
+readme = "README.md"
+packages = [{include = "docs-check", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.6,<3.12"
+aspose-words = "24.3.0"
+
+[tool.poetry.group.dev.dependencies]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+line_length = 80
+multi_line_output = 3
+include_trailing_comma = true
