@@ -57,14 +57,79 @@ class BaseChecker:
 
     def check_changes_string(self) -> Verdict:
         # TODO
-        header = self.doc.sections[0].headers_footers[aw.HeaderFooterType.HEADER_PRIMARY]
-        header.paragraphs.add_run("Header Text")
-
-        footer = self.doc.sections[0].headers_footers[aw.HeaderFooterType.FOOTER_PRIMARY]
-        footer.paragraphs.add_run("Footer Text")
         pass
 
     def check_headers(self) -> Verdict:
+        sections_count = self.doc.sections.count
+        (main_verdict, has_correct_id_by_section, has_page_number_by_section, miss_header_by_section,
+         has_any_header_by_section) = self.check_footers_headers(is_header=True)
+
+        page_count = 0
+        for i in range(sections_count):
+            if page_count < 2:
+                if has_any_header_by_section[i]:
+                    main_verdict.add_message(
+                        "На титульном листе и листе утверждения не должно быть верхнего колонтитула."
+                    )
+            else:
+                if miss_header_by_section[i]:
+                    new_verdict = Verdict(position=f"Раздел {i + 1}", standard="19.106-78")
+                    new_verdict.add_message("Пропущен верхний колонтитул в основном тексте документа.")
+                    main_verdict += new_verdict
+                elif has_any_header_by_section[i]:
+                    new_verdict = Verdict(position=f"Верхний колонтитул раздела {i + 1}", standard="19.106-78")
+                    if not has_page_number_by_section[i]:
+                        new_verdict.add_message("Нет номера страницы")
+                    if not has_correct_id_by_section[i]:
+                        new_verdict.add_message("Некорректный идентификатор документа")
+
+                    main_verdict += new_verdict
+
+            page_count += self.get_section_page_count(self.doc.sections[i])
+
+        return main_verdict
+
+    def check_footers(self):
+        sections_count = self.doc.sections.count
+        (main_verdict, has_correct_id_by_section, has_page_number_by_section, miss_header_by_section,
+         has_any_header_by_section) = self.check_footers_headers(is_header=False)
+
+        page_count = 0
+        for i in range(sections_count):
+            if page_count < 2:
+                if has_any_header_by_section[i]:
+                    main_verdict.add_message(
+                        "На титульном листе и листе утверждения не должно быть нижнего колонтитула."
+                    )
+            else:
+                if page_count == self.doc.page_count - 1:
+                    if has_any_header_by_section[i]:
+                        new_verdict = Verdict(position=f"Раздел {i + 1}", standard="19.106-78")
+                        new_verdict.add_message("Таблица в нижнем колонтитуле листа регистрации изменений избыточна")
+                else:
+                    if miss_header_by_section[i]:
+                        new_verdict = Verdict(position=f"Раздел {i + 1}", standard="19.106-78")
+                        new_verdict.add_message("Пропущен нижний колонтитул в основном тексте документа.")
+                        main_verdict += new_verdict
+                    elif has_any_header_by_section[i]:
+                        new_verdict = Verdict(position=f"Нижний колонтитул раздела {i + 1}", standard="19.106-78")
+                        if not has_correct_id_by_section[i]:
+                            new_verdict.add_message("Некорректный идентификатор документа")
+
+                        main_verdict += new_verdict
+
+            page_count += self.get_section_page_count(self.doc.sections[i])
+
+
+        return main_verdict
+
+    def check_footers_headers(self, is_header=True):
+        """
+        :param header: False if footer
+        :return:
+        miss_header_by_section - no header on some page of section
+        """
+
         main_verdict = Verdict(position="Весь документ", standard="19.106-78")
         sections_count = self.doc.sections.count
         has_page_number_by_section = [False] * sections_count
@@ -73,18 +138,19 @@ class BaseChecker:
         miss_header_by_section = [False] * sections_count
 
         for i in range(sections_count):
-            verdict = Verdict(position=f"Верхний колонтитул раздела {i + 1}", standard="19.106-78")
             section = self.doc.sections[i]
+            if is_header:
+                verdict = Verdict(position=f"Верхний колонтитул раздела {i + 1}", standard="19.106-78")
+                headers_array = [section.headers_footers.header_even, section.headers_footers.header_primary]
+                if section.page_setup.different_first_page_header_footer:
+                    headers_array.append(section.headers_footers.header_first)
+            else:
+                verdict = Verdict(position=f"Нижний колонтитул раздела {i + 1}", standard="19.106-78")
+                headers_array = [section.headers_footers.footer_even, section.headers_footers.footer_primary]
+                if section.page_setup.different_first_page_header_footer:
+                    headers_array.append(section.headers_footers.header_first)
 
-            headers_array = [
-                section.headers_footers[aw.HeaderFooterType.HEADER_PRIMARY]
-            ]
-
-            if section.page_setup.odd_and_even_pages_header_footer:
-                headers_array.append(section.headers_footers[aw.HeaderFooterType.HEADER_EVEN])
-            if section.page_setup.different_first_page_header_footer:
-                headers_array.append(section.headers_footers[aw.HeaderFooterType.HEADER_FIRST])
-
+            print(headers_array)
             if not any(headers_array):
                 # linked to previous whole
                 has_correct_id_by_section[i] = has_correct_id_by_section[i - 1]
@@ -100,56 +166,50 @@ class BaseChecker:
             for header in headers_array:
                 has_page_field = False
                 has_correct_id = True
-                if header is not None and not is_empty_string(header.to_string(aw.SaveFormat.TEXT)):
-                    section_has_any_header = True
-                    if header.is_linked_to_previous:
-                        has_page_field = has_page_number_by_section[i - 1]
-                        has_correct_id = has_correct_id_by_section[i - 1]
-                    else:
-                        print(header.to_string(aw.SaveFormat.TEXT))
-                        for field in header.range.fields:
-                            if field.type == aw.fields.FieldType.FIELD_PAGE:
-                                has_page_field = True
-                                break
 
-                        header_text = header.to_string(aw.SaveFormat.TEXT)
-                        if self.check_identifier(header_text.strip()):
-                            if self.check_id_similarity(header_text.strip()):
-                                verdict.add_message("Несовпадение идентификатора документа.")
-                                has_correct_id = False
+                if header is not None:
+                    if not is_empty_string(header.to_string(aw.SaveFormat.TEXT)):
+                        section_has_any_header = True
+                        if header.is_linked_to_previous:
+                            has_page_field = has_page_number_by_section[i - 1]
+                            has_correct_id = has_correct_id_by_section[i - 1]
                         else:
-                            has_correct_id = False
-                else:
-                    section_miss_header = True
+                            print(header.to_string(aw.SaveFormat.TEXT), i)
+                            for field in header.range.fields:
+                                if field.as_field().type == aw.fields.FieldType.FIELD_PAGE:
+                                    has_page_field = True
+                                    break
 
-                if not has_correct_id and section_has_correct_id:
-                    verdict.add_message("Некорректный идентификатор документа.")
-                    section_has_correct_id = False
-                if not has_page_field and section_has_page_field:
-                    section_has_page_field = False
-                    verdict.add_message("Отсутствует нумерация страниц.")
+                            header_text = header.to_string(aw.SaveFormat.TEXT)
+                            if is_header:
+                                header_text_verdict = self.check_header_text(header_text)
+                                has_correct_id = header_text_verdict.ok
+                                verdict += header_text_verdict
+                            else:
+                                verdict += self.check_footer_table(header.tables, header_text)
+                                if self.check_identifier(header_text, short=True, exact=False):
+                                    verdict += self.check_id_similarity(header_text)
+                    else:
+                        section_miss_header = True
+
+                    if not has_correct_id:
+                        section_has_correct_id = False
+                    if not has_page_field:
+                        section_has_page_field = False
+                    main_verdict += verdict
 
             has_correct_id_by_section[i] = section_has_correct_id
             has_page_number_by_section[i] = section_has_page_field
             miss_header_by_section[i] = section_miss_header
             has_any_header_by_section[i] = section_has_any_header
 
-        page_count = 0
-        for i in range(sections_count):
-            if page_count < 2:
-                if has_any_header_by_section[i]:
-                    main_verdict.add_message(
-                        "На титульном листе и листе утверждения не должно быть верхнего колонтитула."
-                    )
-            else:
-                if miss_header_by_section[i]:
-                    new_verdict = Verdict(position=f"Раздел {i + 1}", standard="19.106-78")
-                    new_verdict.add_message("Пропущен верхний колонтитул в основном тексте документа.")
-                    main_verdict += new_verdict
-
-            page_count += self.get_section_page_count(self.doc.sections[i])
-
-        return main_verdict
+        return (
+            main_verdict,
+            has_correct_id_by_section,
+            has_page_number_by_section,
+            miss_header_by_section,
+            has_any_header_by_section
+        )
 
     def get_section_page_count(self, section):
         layout_collector = aw.layout.LayoutCollector(self.doc)
@@ -158,6 +218,38 @@ class BaseChecker:
         end_page = layout_collector.get_end_page_index(section)
 
         return end_page - start_page + 1
+
+    def check_footer_table(self, footer_tables: aw.tables.TableCollection, footer_text) -> Verdict:
+        verdict = Verdict(standard="ГОСТ 19.604-78")
+        if footer_tables.count > 1:
+            verdict.add_message("Нижний колонтитул должен содержать только одну таблицу регистрации изменений.")
+        elif footer_tables.count == 1:
+            table = footer_tables[0]
+            if table.rows.count < 2:
+                verdict.add_message("В таблице регистрации изменений недостаточно строк.")
+
+        footer_text = footer_text.lower()
+        required = ["изм", "лист", "подп", "дата"]
+        contains_required = True
+        for word in required:
+            if word not in footer_text:
+                contains_required = False
+                break
+
+        if not (contains_required and re.search(r"№\s+док", footer_text) and re.search("№\s+подл", footer_text)):
+            verdict.add_message("В таблице регистрации изменений не присутствуют все необходимые поля.")
+
+        return verdict
+
+    def check_header_text(self, header_text) -> Verdict:
+        verdict = Verdict()
+        if self.check_identifier(header_text.strip(), exact=False):
+            return self.check_id_similarity(header_text.strip())
+        else:
+            verdict.ok = False
+
+        return verdict
+
 
     def check_certification_page(self) -> Verdict:
         verdict = Verdict(position="Лист утверждения", standard="ГОСТ 19.104-78")
@@ -301,7 +393,7 @@ class BaseChecker:
 
         return verdict
 
-    def check_identifier(self, identifier: str, short=False, page_type=None):
+    def check_identifier(self, identifier: str, short=False, page_type=None, exact=True):
         if page_type is None:
             page_type = ""
         else:
@@ -315,10 +407,15 @@ class BaseChecker:
         if self.doc_type_id is not None:
             doc_type_id = self.doc_type_id
 
-        if short:
-            return re.match(r"\s*[A-Z]{2}\.\d+\.\d\d\.\d\d-\d\d\s", identifier)
+        if exact:
+            comparing_func = re.match
         else:
-            return re.match(
+            comparing_func = re.search
+
+        if short:
+            return comparing_func(r"\s*[A-Z]{2}\.\d+\.\d\d\.\d\d-\d\d\s", identifier)
+        else:
+            return comparing_func(
                 r"\s*[A-Z]{2}\.\d+\.\d\d\.\d\d-\d\d\s" + doc_type_name + r"\s" + doc_type_id + page_type + r"\s*",
                 identifier
             )

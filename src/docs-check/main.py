@@ -40,7 +40,24 @@ def check_if_on_page(page_number, text):
     extractedPage = doc.extract_pages(page_number, 1)
     print(extractedPage.to_string(aw.SaveFormat.TEXT))
 
+
+
+
 from checker import BaseChecker
 
 checker = BaseChecker(doc)
-print(checker.check_certification_page().messages)
+
+
+# dst_doc = aw.Document()
+# new_section = dst_doc.import_node(doc.sections[0], True).as_section()
+# dst_doc.sections.add(new_section)
+# print(doc.extract_pages(0, 1).to_string(aw.SaveFormat.TEXT)) #TODO
+# Работает, но нужно вычесть первую пустую страницу
+# print(checker.check_certification_page().messages)
+
+
+
+verdict = checker.check_footers()
+# print(checker.check_footers_headers())
+for message in verdict.messages:
+    print(message)
