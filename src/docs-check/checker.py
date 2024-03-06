@@ -21,12 +21,22 @@ class BaseChecker:
     doc_type_id: str = "01-1"
     doc_identifier: str = None
 
+    toc_valid = False
+    names_to_numbers = None
+    unsorted_numbers = None
+    name_to_page = None
+    name_to_real_name = None
+    name_to_bookmark = None
+    has_no_number = None
+    numbers_to_names = None
+
     def __init__(self, doc: aw.Document):
         if not type(doc) is aw.Document:
             raise ValueError("doc parameter should provide aspose.words.Document")
         self.doc = doc
 
     def check_page_margins(self) -> Verdict:
+        # TODO межстрочный интервал
         verdict = Verdict(position="Весь документ", standard="ГОСТ 19.106-78")
         page_setup = self.doc.sections[0].page_setup
 
@@ -55,9 +65,143 @@ class BaseChecker:
 
         return verdict
 
-    def check_changes_string(self) -> Verdict:
-        # TODO
-        pass
+    def check_table_of_contents(self) -> Verdict:
+        verdict = Verdict(position="Содержание", standard="ГОСТ 106.106-78")
+        toc_exists = False
+        toc_numeration_valid = True
+        toc_valid = True
+        toc_start = None
+
+        names_to_numbers = {}    # key - name: value - structured number 1.x.x
+        numbers_to_names = {}
+        unsorted_numbers = []
+        name_to_page = {}
+        name_to_real_name = {}
+        name_to_bookmark = {}
+        has_no_number = set()
+        was_numerated = False
+
+        allowed_before_numbers = ['аннотация']
+        allowed_after_numbers = ['лист регистрации изменений']
+
+        for field in self.doc.range.fields:
+            if field.type == aw.fields.FieldType.FIELD_TOC:
+                toc_start = field.start
+            if field.type == aw.fields.FieldType.FIELD_HYPERLINK:
+                hyperlink = field.as_field_hyperlink()
+                if hyperlink.sub_address is not None and hyperlink.sub_address.find("_Toc") == 0:
+                    toc_exists = True
+                    toc_item = field.start.get_ancestor(aw.NodeType.PARAGRAPH).as_paragraph()
+                    toc_item_text = toc_item.to_string(aw.SaveFormat.TEXT).strip()
+
+                    matched = re.search(r"((\d+(\.\d+)*\.?\s+)|^)(.*?)\s+(\d+)$", toc_item_text)
+                    if matched is not None:
+                        name_in_toc = matched.group(4)
+                        number_in_toc = matched.group(2)
+                        page_number = matched.group(5)
+
+                        cleared_name = name_in_toc.strip().lower()
+                        name_to_page[cleared_name] = int(page_number)
+
+                        if number_in_toc:
+                            was_numerated = True
+                            number_in_toc = number_in_toc.strip()
+                            if number_in_toc[-1] != ".":
+                                verdict.add_message("Номера пунктов должны оканчиваться точкой")
+                            number_in_toc = number_in_toc.strip(".")
+
+                            structure_number = list(map(int, number_in_toc.split(".")))
+                            if len(structure_number) > 4:
+                                toc_numeration_valid = False
+                                verdict.add_message(
+                                    "Минимальная единица документа - подпункт с номером вида x.x.x.x"
+                                    "Более мелкие единицы относятся к перечислениям и в содержании не указываются"
+                                )
+                                break
+
+                            while len(structure_number) != 4:
+                                structure_number.append(0)
+                            unsorted_numbers.append(tuple(structure_number))
+                            names_to_numbers[cleared_name] = tuple(structure_number)
+                            numbers_to_names[tuple(structure_number)] = cleared_name
+                        else:
+                            has_no_number.add(cleared_name)
+                            if was_numerated:
+                                if not (cleared_name in allowed_after_numbers or "приложение" in cleared_name):
+                                    verdict.add_message(
+                                        f"Пункт {name_in_toc} должен быть пронумерован "
+                                        f"или находиться перед содержанием документа"
+                                    )
+                            else:
+                                if not (cleared_name in allowed_before_numbers):
+                                    verdict.add_message(
+                                        f"Пункт {name_in_toc} должен быть пронумерован или находиться в конце документа"
+                                    )
+
+                        bookmark = self.doc.range.bookmarks.get_by_name(hyperlink.sub_address)
+                        name_to_bookmark[name_in_toc.lower().strip()] = bookmark
+                        try:
+                            pointer = bookmark.bookmark_start.get_ancestor(aw.NodeType.PARAGRAPH).as_paragraph()
+                            pointed_text = pointer.to_string(aw.SaveFormat.TEXT)
+                            if cleared_name != pointed_text.lower().strip():
+                                verdict.add_message(
+                                    f'Заголовок содержания "{name_in_toc}" не совпадает с заголовком в тексте'
+                                )
+                                toc_valid = False
+                            else:
+                                name_to_real_name[cleared_name] = pointer.to_string(aw.SaveFormat.TEXT).strip()
+
+                        except Exception:
+                            if not self.is_text_on_page(name_in_toc.lower().strip(), page_number):
+                                verdict.add_message(
+                                    f'Заголовок содержания "{name_in_toc}" не совпадает с заголовком в тексте'
+                                )
+                                toc_valid = False
+                            else:
+                                name_to_real_name[cleared_name] = name_in_toc.strip()
+
+        if not toc_exists:
+            verdict.add_message("В документе нет содержания")
+            return verdict
+
+        layout_collector = aw.layout.LayoutCollector(self.doc)
+        toc_start_page = layout_collector.get_start_page_index(toc_start)   # this is 1-based index
+
+        if not self.is_text_on_page("СОДЕРЖАНИЕ", toc_start_page - 1, lower=False):
+            verdict.add_message("Страница содержания должна содержать заголовок 'СОДЕРЖАНИЕ'")
+
+        if toc_numeration_valid:
+            sorted_numbers = sorted(unsorted_numbers)
+            if sorted_numbers != unsorted_numbers:
+                verdict.add_message("Нарушен порядок нумерации в содержании и тексте документа")
+            if sorted_numbers:
+                first_element_page = name_to_page[numbers_to_names[sorted_numbers[0]]]
+                if first_element_page <= toc_start_page:
+                    verdict.add_message("Содержание должно находиться перед основным текстом на отдельной странице.")
+
+        if "аннотация" in has_no_number:
+            if toc_start_page < name_to_page["аннотация"]:
+                verdict.add_message("Аннотация должна быть перед содержанием")
+        else:
+            verdict.add_message("Аннотация не нумеруется")
+
+        if "содержание" in has_no_number:
+            verdict.add_message("Содержание не указывается в содержании и не нумеруется.")
+
+        if "лист регистрации изменений" not in has_no_number:
+            verdict.add_message("Лист регистрации изменений не нумеруется")
+
+        if toc_valid:
+            self.toc_valid = True
+            self.names_to_numbers = names_to_numbers
+            self.unsorted_numbers = unsorted_numbers
+            self.name_to_page = name_to_page
+            self.name_to_real_name = name_to_real_name
+            self.name_to_bookmark = name_to_bookmark
+            self.has_no_number = has_no_number
+            self.numbers_to_names = numbers_to_names
+
+        return verdict
 
     def check_headers(self) -> Verdict:
         sections_count = self.doc.sections.count
@@ -120,7 +264,6 @@ class BaseChecker:
 
             page_count += self.get_section_page_count(self.doc.sections[i])
 
-
         return main_verdict
 
     def check_footers_headers(self, is_header=True):
@@ -150,7 +293,6 @@ class BaseChecker:
                 if section.page_setup.different_first_page_header_footer:
                     headers_array.append(section.headers_footers.header_first)
 
-            print(headers_array)
             if not any(headers_array):
                 # linked to previous whole
                 has_correct_id_by_section[i] = has_correct_id_by_section[i - 1]
@@ -174,7 +316,6 @@ class BaseChecker:
                             has_page_field = has_page_number_by_section[i - 1]
                             has_correct_id = has_correct_id_by_section[i - 1]
                         else:
-                            print(header.to_string(aw.SaveFormat.TEXT), i)
                             for field in header.range.fields:
                                 if field.as_field().type == aw.fields.FieldType.FIELD_PAGE:
                                     has_page_field = True
@@ -210,6 +351,13 @@ class BaseChecker:
             miss_header_by_section,
             has_any_header_by_section
         )
+
+    def is_text_on_page(self, text, page_number, lower=True):
+        page_text = self.doc.extract_pages(int(page_number), 1).to_string(aw.SaveFormat.TEXT)
+        if lower:
+            page_text = page_text.lower()
+
+        return text in page_text
 
     def get_section_page_count(self, section):
         layout_collector = aw.layout.LayoutCollector(self.doc)
@@ -249,7 +397,6 @@ class BaseChecker:
             verdict.ok = False
 
         return verdict
-
 
     def check_certification_page(self) -> Verdict:
         verdict = Verdict(position="Лист утверждения", standard="ГОСТ 19.104-78")
