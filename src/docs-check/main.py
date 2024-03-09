@@ -24,15 +24,7 @@ from checker import BaseChecker
 checker = BaseChecker(doc)
 
 
-# dst_doc = aw.Document()
-# new_section = dst_doc.import_node(doc.sections[0], True).as_section()
-# dst_doc.sections.add(new_section)
-# print(doc.extract_pages(0, 1).to_string(aw.SaveFormat.TEXT)) #TODO
-# Работает, но нужно вычесть первую пустую страницу
-# print(checker.check_certification_page().messages)
 
-
-
-verdict = checker.check_table_of_contents()
+verdict = checker.check_line_spacing()
 for message in verdict.messages:
     print(message)

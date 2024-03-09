@@ -40,6 +40,7 @@ class BaseChecker:
         verdict = Verdict(position="Весь документ", standard="ГОСТ 19.106-78")
         page_setup = self.doc.sections[0].page_setup
 
+
         if page_setup.orientation != aw.Orientation.PORTRAIT:
             verdict.add_message("Некорректная ориентация страницы. Она должна быть книжной.")
         if page_setup.paper_size != aw.PaperSize.A4:
@@ -61,6 +62,51 @@ class BaseChecker:
         if not isclose(page_setup.top_margin, aw.ConvertUtil.millimeter_to_point(25), rel_tol=self.FLOAT_DELTA):
             verdict.add_message(
                 f"Неверный отступ сверху. Требуемый - 25мм."
+            )
+
+        return verdict
+
+    def check_fonts(self):
+        verdict = Verdict()
+        right_font = "Times New Roman"
+        layout_collector = aw.layout.LayoutCollector(self.doc)
+        page_set = set()
+        for run in self.doc.get_child_nodes(aw.NodeType.RUN, True):
+            # Extract the font name
+            font = run.as_run().font
+            if font.name != right_font or not (font.size == 14 or font.size == 12):
+                page_set.add(layout_collector.get_start_page_index(run))
+
+        for page_number in page_set:
+            verdict.add_message(
+                f'Используется некорректный шрифт, используйте "{right_font}" 12 или 14',
+                position=f"Страница {page_number}"
+            )
+        return verdict
+
+    def check_line_spacing(self):
+        verdict = Verdict(position="Весь документ")
+
+        layout_collector = aw.layout.LayoutCollector(self.doc)
+        page_set = set()
+        for para in self.doc.get_child_nodes(aw.NodeType.PARAGRAPH, True):
+            paragraph = para.as_paragraph()
+            if paragraph.paragraph_format.style.name.startswith("Heading"):
+                continue
+
+            line_spacing = paragraph.paragraph_format.line_spacing
+            if paragraph.runs[0] is not None:
+                if line_spacing != 12 * 1.5:
+                    text = para.to_string(aw.SaveFormat.TEXT).strip()
+                    if text != "" and not (paragraph.runs[0].font.bold and text.isupper()):
+                        page_number = layout_collector.get_start_page_index(para)
+                        if 2 < page_number < self.doc.page_count:
+                            page_set.add(page_number)
+
+        for page_number in page_set:
+            verdict.add_message(
+                "Используется некорректный межстрочный интервал",
+                position=f"Страница {page_number}"
             )
 
         return verdict

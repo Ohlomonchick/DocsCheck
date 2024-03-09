@@ -29,8 +29,12 @@ class Verdict:
         if standard is None:
             self.standard = ""
 
-    def add_message(self, message: str):
-        self.messages.append(Message(message, position=self.position, standard=self.standard))
+    def add_message(self, message: str, position: str = None):
+        if position is None:
+            self.messages.append(Message(message, position=self.position, standard=self.standard))
+        else:
+            self.messages.append(Message(message, position=position, standard=self.standard))
+
         self.ok = False
 
     def __add__(self, other):
