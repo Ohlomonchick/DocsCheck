@@ -23,7 +23,7 @@ class BaseChecker:
 
     toc_valid = False
     names_to_numbers = None
-    unsorted_numbers = None
+    sorted_numbers = None
     name_to_page = None
     name_to_real_name = None
     name_to_bookmark = None
@@ -36,10 +36,8 @@ class BaseChecker:
         self.doc = doc
 
     def check_page_margins(self) -> Verdict:
-        # TODO межстрочный интервал
         verdict = Verdict(position="Весь документ", standard="ГОСТ 19.106-78")
         page_setup = self.doc.sections[0].page_setup
-
 
         if page_setup.orientation != aw.Orientation.PORTRAIT:
             verdict.add_message("Некорректная ориентация страницы. Она должна быть книжной.")
@@ -66,6 +64,114 @@ class BaseChecker:
 
         return verdict
 
+    def check_titles(self) -> Verdict:
+        verdict = Verdict()
+        if not self.toc_valid:
+            return verdict
+
+        prev_indents_by_level = [0.0] * 4
+
+        for i in range(len(self.sorted_numbers)):
+            number = self.sorted_numbers[i]
+            base_left_margin = self.doc.sections[0].page_setup.left_margin
+
+            title_level = 4 - number.count(0)
+            name = self.numbers_to_names[number]
+            bookmark = self.name_to_bookmark[name]
+            pointer = bookmark.bookmark_start.get_ancestor(aw.NodeType.PARAGRAPH).as_paragraph()
+            pointed_text = pointer.to_string(aw.SaveFormat.TEXT).strip()
+            first_run = pointer.runs[0]
+            if first_run:
+                next_paragraph = pointer.next_sibling
+
+                # TODO расстояние до предыдущего текста у заголовка подраздела
+                while next_paragraph.node_type != aw.NodeType.PARAGRAPH:
+                    next_paragraph = next_paragraph.next_sibling
+                    if next_paragraph is None:
+                        break
+
+                distance_to_next = (pointer.as_paragraph().paragraph_format.space_after
+                                    + pointer.as_paragraph().paragraph_format.space_before)
+
+                next_paragraph_text = next_paragraph.to_string(aw.SaveFormat.TEXT).strip()
+                has_title_after = False
+                if i < len(self.sorted_numbers) - 1:
+                    next_title_text = self.name_to_real_name[self.numbers_to_names[self.sorted_numbers[i + 1]]].strip()
+                    if next_title_text in next_paragraph_text:
+                        has_title_after = True
+
+                if not first_run.font.bold:
+                    verdict.add_message(f"Заголовок '{pointed_text}' не выделен жирным шрифтом.")
+                if pointed_text[-1] == ".":
+                    verdict.add_message(f"Заголовок '{pointed_text}' оканчивается точкой.")
+
+                if title_level == 1:
+                    prev_indent = 0
+                    if pointer.paragraph_format.alignment != aw.ParagraphAlignment.CENTER:
+                        verdict.add_message(
+                            f"Заголовок '{pointed_text}' не центрирован."
+                        )
+                    if not self.name_to_real_name[name].isupper():
+                        verdict.add_message(
+                            f"Заголовок уровня 1 '{pointed_text}' написан не строчными буквами."
+                        )
+                    page = self.doc.extract_pages(self.name_to_page[name], 1).sections[0].body
+
+                    is_first = False
+                    for node in page.get_child_nodes(aw.NodeType.ANY, True):
+
+                        if node.node_type in [aw.NodeType.PARAGRAPH, aw.NodeType.TABLE]:
+                            if node.node_type == aw.NodeType.PARAGRAPH:
+                                first_text = node.as_paragraph().to_string(aw.SaveFormat.TEXT).strip()
+                                if first_text == self.name_to_real_name[name]:
+                                    is_first = True
+                            break
+
+                    if not is_first:
+                        verdict.add_message(
+                            f"Заголовок уровня 1 '{pointed_text}' находится не в начале страницы."
+                        )
+
+                    if has_title_after:
+                        if distance_to_next < 12 * 3:
+                            verdict.add_message(
+                                f"Расстояние между заголовком раздела '{pointed_text}' "
+                                f"и заголовком подраздела менее, чем 3 высоты шрифта"
+                            )
+
+                else:
+                    if self.name_to_real_name[name].isupper():
+                        verdict.add_message(
+                            f"Заголовок уроня {title_level} '{pointed_text}' написан строчными буквами."
+                        )
+
+                    left_indent = pointer.paragraph_format.left_indent + pointer.paragraph_format.first_line_indent
+                    if left_indent <= prev_indents_by_level[title_level - 2]:
+                        verdict.add_message(
+                            f"Отступ заголовка уровня {title_level} '{pointed_text}' "
+                            f"меньше, чем у заголовка предыдущего уровня"
+                        )
+                    prev_indents_by_level[title_level - 1] = left_indent
+
+                    if not has_title_after:
+                        if distance_to_next < 12 * 3 and next_paragraph_text:
+                            verdict.add_message(
+                                f"Расстояние между заголовком '{pointed_text}' "
+                                f"и следующим текстом менее, чем 3 высоты шрифта"
+                            )
+
+        return verdict
+
+    def check_paragraphs(self):
+        # if not next_paragraph.as_paragraph().is_list_item:
+        #     print(pointed_text)
+        #     print(next_paragraph.as_paragraph().paragraph_format.first_line_indent)
+        #     print(next_paragraph.as_paragraph().paragraph_format.left_indent)
+        #     print(next_paragraph.to_string(aw.SaveFormat.TEXT))
+
+        # next_paragraph.list_format.list_level.number_style == BULLET or NONE
+
+        pass
     def check_fonts(self):
         verdict = Verdict()
         right_font = "Times New Roman"
@@ -112,7 +218,7 @@ class BaseChecker:
         return verdict
 
     def check_table_of_contents(self) -> Verdict:
-        verdict = Verdict(position="Содержание", standard="ГОСТ 106.106-78")
+        verdict = Verdict(position="Содержание", standard="ГОСТ 19.106-78")
         toc_exists = False
         toc_numeration_valid = True
         toc_valid = True
@@ -185,8 +291,8 @@ class BaseChecker:
                                     )
 
                         bookmark = self.doc.range.bookmarks.get_by_name(hyperlink.sub_address)
-                        name_to_bookmark[name_in_toc.lower().strip()] = bookmark
                         try:
+                            name_to_bookmark[name_in_toc.lower().strip()] = bookmark
                             pointer = bookmark.bookmark_start.get_ancestor(aw.NodeType.PARAGRAPH).as_paragraph()
                             pointed_text = pointer.to_string(aw.SaveFormat.TEXT)
                             if cleared_name != pointed_text.lower().strip():
@@ -216,8 +322,8 @@ class BaseChecker:
         if not self.is_text_on_page("СОДЕРЖАНИЕ", toc_start_page - 1, lower=False):
             verdict.add_message("Страница содержания должна содержать заголовок 'СОДЕРЖАНИЕ'")
 
+        sorted_numbers = sorted(unsorted_numbers)
         if toc_numeration_valid:
-            sorted_numbers = sorted(unsorted_numbers)
             if sorted_numbers != unsorted_numbers:
                 verdict.add_message("Нарушен порядок нумерации в содержании и тексте документа")
             if sorted_numbers:
@@ -237,10 +343,10 @@ class BaseChecker:
         if "лист регистрации изменений" not in has_no_number:
             verdict.add_message("Лист регистрации изменений не нумеруется")
 
-        if toc_valid:
+        if toc_valid and toc_numeration_valid:
             self.toc_valid = True
             self.names_to_numbers = names_to_numbers
-            self.unsorted_numbers = unsorted_numbers
+            self.sorted_numbers = sorted_numbers
             self.name_to_page = name_to_page
             self.name_to_real_name = name_to_real_name
             self.name_to_bookmark = name_to_bookmark
@@ -314,6 +420,7 @@ class BaseChecker:
 
     def check_footers_headers(self, is_header=True):
         """
+        :param is_header:
         :param header: False if footer
         :return:
         miss_header_by_section - no header on some page of section
@@ -518,7 +625,7 @@ class BaseChecker:
             verdict.add_message("Нет таблицы регистрации и хранения или она расположена внутри отступов страницы.")
 
         first_paragraph_text = paragraphs[0].as_paragraph().to_string(aw.SaveFormat.TEXT)
-        if re.match("\s*УТВЕРЖД(Ё|Е)Н\s*", first_paragraph_text):
+        if re.match(r"\s*УТВЕРЖД[ЁЕ]Н\s*", first_paragraph_text):
             if 1 < paragraphs.count:
                 identifier = paragraphs[1].to_string(aw.SaveFormat.TEXT)
                 if self.check_identifier(
