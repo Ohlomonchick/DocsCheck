@@ -11,7 +11,7 @@
   <component name="PyNamespacePackagesService">
     <option name="namespacePackageFolders">
       <list>
-        <option value="$MODULE_DIR$/src/docs-check" />
+        <option value="$MODULE_DIR$/src/docsCheck" />
       </list>
     </option>
   </component>

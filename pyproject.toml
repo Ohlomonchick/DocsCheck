@@ -1,16 +1,19 @@
 [tool.poetry]
-name = "docs-check"
+name = "docsCheck"
 version = "0.0.1"
 description = ""
 authors = ["Dmitry Proskurin <proskurin.dima16@gmail.com>"]
 readme = "README.md"
-packages = [{include = "docs-check", from = "src"}]
+packages = [{include = "docsCheck", from = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.6,<3.12"
 aspose-words = "24.3.0"
 
 [tool.poetry.group.dev.dependencies]
+
+[tool.poetry.scripts]
+docsCheck = 'docsCheck.__main__:main'
 
 [build-system]
 requires = ["poetry-core"]
