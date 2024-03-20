@@ -16,6 +16,9 @@ checker = BaseChecker(doc)
 
 
 verdict = checker.check_table_of_contents()
-verdict += checker.check_titles()
+verdict += checker.check_page_margins()
+verdict += checker.check_paragraphs()
+verdict += checker.check_lists()
+verdict += checker.check_chapters()
 for message in verdict.messages:
     print(message)

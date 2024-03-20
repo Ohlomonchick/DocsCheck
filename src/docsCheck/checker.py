@@ -1,4 +1,4 @@
-from .utils import *
+from docsCheck.utils import *
 from math import isclose
 import re
 
@@ -21,6 +21,9 @@ class BaseChecker:
     doc_type_id: str = "01-1"
     doc_identifier: str = None
 
+    chapters: List[str] = ["аннотация", "содержание", "лист регистрации изменений"]
+    doc_standard: str = "ГОСТ 19.106-78"
+
     toc_valid = False
     names_to_numbers = None
     sorted_numbers = None
@@ -35,37 +38,53 @@ class BaseChecker:
             raise ValueError("doc parameter should provide aspose.words.Document")
         self.doc = doc
 
+    def main_check(self) -> Verdict:
+        main_verdict = Verdict(position="Весь документ.", standard="ЕСПД")
+
+        return main_verdict
+
+    def check_chapters(self):
+        verdict = Verdict(position="Веcь документ", standard=self.doc_standard)
+        numerated = set(self.name_to_page.keys())
+        if self.toc_valid:
+            for chapter in self.chapters:
+                if not (chapter.lower() in self.has_no_number or chapter.lower() in numerated):
+                    verdict.add_message(f'Нет необходимого раздела "{chapter}"')
+
+        return verdict
+
     def check_page_margins(self) -> Verdict:
         verdict = Verdict(position="Весь документ", standard="ГОСТ 19.106-78")
-        page_setup = self.doc.sections[0].page_setup
+        for section in self.doc.sections:
+            page_setup = section.as_section().page_setup
 
-        if page_setup.orientation != aw.Orientation.PORTRAIT:
-            verdict.add_message("Некорректная ориентация страницы. Она должна быть книжной.")
-        if page_setup.paper_size != aw.PaperSize.A4:
-            verdict.add_message(
-                f"Документация оформляется на листах формата А4. Ваш формат - {page_setup.paper_size}"
-            )
-        if not isclose(page_setup.left_margin, aw.ConvertUtil.millimeter_to_point(20), rel_tol=self.FLOAT_DELTA):
-            verdict.add_message(
-                f"Неверный отступ слева. Требуемый - 20мм."
-            )
-        if not isclose(page_setup.right_margin, aw.ConvertUtil.millimeter_to_point(10), rel_tol=self.FLOAT_DELTA):
-            verdict.add_message(
-                f"Неверный отступ справа. Требуемый - 10мм."
-            )
-        if not isclose(page_setup.bottom_margin, aw.ConvertUtil.millimeter_to_point(15), rel_tol=self.FLOAT_DELTA):
-            verdict.add_message(
-                f"Неверный отступ снизу. Требуемый - 15мм."
-            )
-        if not isclose(page_setup.top_margin, aw.ConvertUtil.millimeter_to_point(25), rel_tol=self.FLOAT_DELTA):
-            verdict.add_message(
-                f"Неверный отступ сверху. Требуемый - 25мм."
-            )
+            if page_setup.orientation != aw.Orientation.PORTRAIT:
+                verdict.add_message("Некорректная ориентация страницы. Она должна быть книжной.")
+            if page_setup.paper_size != aw.PaperSize.A4:
+                verdict.add_message(
+                    f"Документация оформляется на листах формата А4. Ваш формат - {page_setup.paper_size}"
+                )
+            if not isclose(page_setup.left_margin, aw.ConvertUtil.millimeter_to_point(20), rel_tol=self.FLOAT_DELTA):
+                verdict.add_message(
+                    f"Неверный отступ слева. Требуемый - 20мм."
+                )
+            if not isclose(page_setup.right_margin, aw.ConvertUtil.millimeter_to_point(10), rel_tol=self.FLOAT_DELTA):
+                verdict.add_message(
+                    f"Неверный отступ справа. Требуемый - 10мм."
+                )
+            if not isclose(page_setup.bottom_margin, aw.ConvertUtil.millimeter_to_point(15), rel_tol=self.FLOAT_DELTA):
+                verdict.add_message(
+                    f"Неверный отступ снизу. Требуемый - 15мм."
+                )
+            if not isclose(page_setup.top_margin, aw.ConvertUtil.millimeter_to_point(25), rel_tol=self.FLOAT_DELTA):
+                verdict.add_message(
+                    f"Неверный отступ сверху. Требуемый - 25мм."
+                )
 
         return verdict
 
     def check_titles(self) -> Verdict:
-        verdict = Verdict()
+        verdict = Verdict(standard="ГОСТ 19.106-78")
         if not self.toc_valid:
             return verdict
 
@@ -73,7 +92,6 @@ class BaseChecker:
 
         for i in range(len(self.sorted_numbers)):
             number = self.sorted_numbers[i]
-            base_left_margin = self.doc.sections[0].page_setup.left_margin
 
             title_level = 4 - number.count(0)
             name = self.numbers_to_names[number]
@@ -163,15 +181,59 @@ class BaseChecker:
         return verdict
 
     def check_paragraphs(self):
-        # if not next_paragraph.as_paragraph().is_list_item:
-        #     print(pointed_text)
-        #     print(next_paragraph.as_paragraph().paragraph_format.first_line_indent)
-        #     print(next_paragraph.as_paragraph().paragraph_format.left_indent)
-        #     print(next_paragraph.to_string(aw.SaveFormat.TEXT))
+        verdict = Verdict(standard="ГОСТ 19.106.78")
+        if not self.toc_valid:
+            return verdict
 
-        # next_paragraph.list_format.list_level.number_style == BULLET or NONE
+        skip = 2
+        new_doc = self.doc.extract_pages(skip, self.doc.page_count - 3)
+        layout_collector = aw.layout.LayoutCollector(new_doc)
+        for section in new_doc.sections:
+            for node in section.as_section().body.paragraphs:
+                paragraph = node.as_paragraph()
+                paragraph_text = paragraph.to_string(aw.SaveFormat.TEXT).strip()
+                if paragraph_text and not (paragraph_text.lower() in self.has_no_number
+                                           or paragraph.paragraph_format.style.name.startswith("TOC")
+                                           or re.match(r"(\d+(\.\d+)*\.?\s+)(.*?)$", paragraph_text)
+                                           or paragraph.is_list_item):
+                    if (paragraph.paragraph_format.first_line_indent <= 0 and
+                            paragraph.paragraph_format.alignment != aw.ParagraphAlignment.CENTER):
+                        verdict.add_message(
+                            f"Абзац текста не имеет абзацного отступа",
+                            position=f"Страница {skip + layout_collector.get_start_page_index(paragraph)}")
 
-        pass
+        return verdict
+
+    def check_lists(self):
+        verdict = Verdict(standard="ГОСТ 19.106.78")
+        layout_collector = aw.layout.LayoutCollector(self.doc)
+        has_hyphen = False
+        page_set = set()
+        for para in self.doc.get_child_nodes(aw.NodeType.PARAGRAPH, True):
+            paragraph = para.as_paragraph()
+
+            if paragraph.list_format.is_list_item:
+                list_level = paragraph.list_format.list_level
+                if list_level.number_style == aw.NumberStyle.BULLET:
+
+                    if list_level.number_format == "–" or list_level.number_format == "-":
+                        has_hyphen = True
+                    else:
+                        page_set.add(layout_collector.get_start_page_index(paragraph))
+
+        for page in page_set:
+            verdict.add_message(
+                "Допускается использовать перечисления только с дефисом.",
+                position=f"Страница {page}"
+            )
+
+        if has_hyphen:
+            verdict.add_message("Рекомендуется использовать только нумерованные перечисления.",
+                                position="Весь документ",
+                                message_type=MessageTypes.WARNING)
+
+        return verdict
+
     def check_fonts(self):
         verdict = Verdict()
         right_font = "Times New Roman"
@@ -224,7 +286,7 @@ class BaseChecker:
         toc_valid = True
         toc_start = None
 
-        names_to_numbers = {}    # key - name: value - structured number 1.x.x
+        names_to_numbers = {}  # key - name: value - structured number 1.x.x
         numbers_to_names = {}
         unsorted_numbers = []
         name_to_page = {}
@@ -317,7 +379,8 @@ class BaseChecker:
             return verdict
 
         layout_collector = aw.layout.LayoutCollector(self.doc)
-        toc_start_page = layout_collector.get_start_page_index(toc_start)   # this is 1-based index
+        toc_start_page = layout_collector.get_start_page_index(toc_start)  # this is 1-based index
+        name_to_page["содержание"] = toc_start_page
 
         if not self.is_text_on_page("СОДЕРЖАНИЕ", toc_start_page - 1, lower=False):
             verdict.add_message("Страница содержания должна содержать заголовок 'СОДЕРЖАНИЕ'")

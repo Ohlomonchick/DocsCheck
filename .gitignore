@@ -2,3 +2,4 @@
 /.venv/
 /src/docs-check/samples
 /src/docs-check/to_view
+/dist/
