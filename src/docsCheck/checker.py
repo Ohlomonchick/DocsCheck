@@ -41,6 +41,21 @@ class BaseChecker:
     def main_check(self) -> Verdict:
         main_verdict = Verdict(position="Весь документ.", standard="ЕСПД")
 
+        main_verdict += self.check_page_margins()
+        main_verdict += self.check_certification_page()
+        main_verdict += self.check_title_page()
+        main_verdict += self.check_fonts()
+
+        main_verdict += self.check_footers()
+        main_verdict += self.check_headers()
+        main_verdict += self.check_table_of_contents()
+        # next require table of contents
+        main_verdict += self.check_titles()
+        main_verdict += self.check_paragraphs()
+        main_verdict += self.check_lists()
+        main_verdict += self.check_line_spacing()
+        main_verdict += self.check_chapters()
+
         return main_verdict
 
     def check_chapters(self):
@@ -133,7 +148,8 @@ class BaseChecker:
                         verdict.add_message(
                             f"Заголовок уровня 1 '{pointed_text}' написан не строчными буквами."
                         )
-                    page = self.doc.extract_pages(self.name_to_page[name], 1).sections[0].body
+                    cloned = self.doc.clone()
+                    page = cloned.extract_pages(self.name_to_page[name], 1).sections[0].body
 
                     is_first = False
                     for node in page.get_child_nodes(aw.NodeType.ANY, True):
@@ -186,7 +202,8 @@ class BaseChecker:
             return verdict
 
         skip = 2
-        new_doc = self.doc.extract_pages(skip, self.doc.page_count - 3)
+        cloned = self.doc.clone()
+        new_doc = cloned.extract_pages(skip, self.doc.page_count - 3)
         layout_collector = aw.layout.LayoutCollector(new_doc)
         for section in new_doc.sections:
             for node in section.as_section().body.paragraphs:
@@ -237,12 +254,13 @@ class BaseChecker:
     def check_fonts(self):
         verdict = Verdict()
         right_font = "Times New Roman"
+
         layout_collector = aw.layout.LayoutCollector(self.doc)
         page_set = set()
         for run in self.doc.get_child_nodes(aw.NodeType.RUN, True):
             # Extract the font name
             font = run.as_run().font
-            if font.name != right_font or not (font.size == 14 or font.size == 12):
+            if font.name != right_font:
                 page_set.add(layout_collector.get_start_page_index(run))
 
         for page_number in page_set:
@@ -250,6 +268,7 @@ class BaseChecker:
                 f'Используется некорректный шрифт, используйте "{right_font}" 12 или 14',
                 position=f"Страница {page_number}"
             )
+        layout_collector.document = None
         return verdict
 
     def check_line_spacing(self):
@@ -357,13 +376,15 @@ class BaseChecker:
                             name_to_bookmark[name_in_toc.lower().strip()] = bookmark
                             pointer = bookmark.bookmark_start.get_ancestor(aw.NodeType.PARAGRAPH).as_paragraph()
                             pointed_text = pointer.to_string(aw.SaveFormat.TEXT)
-                            if cleared_name != pointed_text.lower().strip():
+                            matched = re.search(r"((\d+(\.\d+)*\.?\s+)|^)(.*?)$", pointed_text)
+                            real_name = matched.group(4).strip()
+                            if not (cleared_name == pointed_text.lower().strip() or real_name.lower() == cleared_name):
                                 verdict.add_message(
                                     f'Заголовок содержания "{name_in_toc}" не совпадает с заголовком в тексте'
                                 )
                                 toc_valid = False
                             else:
-                                name_to_real_name[cleared_name] = pointer.to_string(aw.SaveFormat.TEXT).strip()
+                                name_to_real_name[cleared_name] = real_name
 
                         except Exception:
                             if not self.is_text_on_page(name_in_toc.lower().strip(), page_number):
@@ -421,7 +442,7 @@ class BaseChecker:
     def check_headers(self) -> Verdict:
         sections_count = self.doc.sections.count
         (main_verdict, has_correct_id_by_section, has_page_number_by_section, miss_header_by_section,
-         has_any_header_by_section) = self.check_footers_headers(is_header=True)
+         has_any_header_by_section) = self._check_footers_headers(is_header=True)
 
         page_count = 0
         for i in range(sections_count):
@@ -451,7 +472,7 @@ class BaseChecker:
     def check_footers(self):
         sections_count = self.doc.sections.count
         (main_verdict, has_correct_id_by_section, has_page_number_by_section, miss_header_by_section,
-         has_any_header_by_section) = self.check_footers_headers(is_header=False)
+         has_any_header_by_section) = self._check_footers_headers(is_header=False)
 
         page_count = 0
         for i in range(sections_count):
@@ -481,7 +502,7 @@ class BaseChecker:
 
         return main_verdict
 
-    def check_footers_headers(self, is_header=True):
+    def _check_footers_headers(self, is_header=True):
         """
         :param is_header:
         :param header: False if footer
@@ -539,13 +560,13 @@ class BaseChecker:
 
                             header_text = header.to_string(aw.SaveFormat.TEXT)
                             if is_header:
-                                header_text_verdict = self.check_header_text(header_text)
+                                header_text_verdict = self._check_header_text(header_text)
                                 has_correct_id = header_text_verdict.ok
                                 verdict += header_text_verdict
                             else:
-                                verdict += self.check_footer_table(header.tables, header_text)
-                                if self.check_identifier(header_text, short=True, exact=False):
-                                    verdict += self.check_id_similarity(header_text)
+                                verdict += self._check_footer_table(header.tables, header_text)
+                                if self._check_identifier(header_text, short=True, exact=False):
+                                    verdict += self._check_id_similarity(header_text)
                     else:
                         section_miss_header = True
 
@@ -569,7 +590,8 @@ class BaseChecker:
         )
 
     def is_text_on_page(self, text, page_number, lower=True):
-        page_text = self.doc.extract_pages(int(page_number), 1).to_string(aw.SaveFormat.TEXT)
+        cloned = self.doc.clone()
+        page_text = cloned.extract_pages(int(page_number), 1).to_string(aw.SaveFormat.TEXT)
         if lower:
             page_text = page_text.lower()
 
@@ -583,7 +605,7 @@ class BaseChecker:
 
         return end_page - start_page + 1
 
-    def check_footer_table(self, footer_tables: aw.tables.TableCollection, footer_text) -> Verdict:
+    def _check_footer_table(self, footer_tables: aw.tables.TableCollection, footer_text) -> Verdict:
         verdict = Verdict(standard="ГОСТ 19.604-78")
         if footer_tables.count > 1:
             verdict.add_message("Нижний колонтитул должен содержать только одну таблицу регистрации изменений.")
@@ -605,10 +627,10 @@ class BaseChecker:
 
         return verdict
 
-    def check_header_text(self, header_text) -> Verdict:
+    def _check_header_text(self, header_text) -> Verdict:
         verdict = Verdict()
-        if self.check_identifier(header_text.strip(), exact=False):
-            return self.check_id_similarity(header_text.strip())
+        if self._check_identifier(header_text.strip(), exact=False):
+            return self._check_id_similarity(header_text.strip())
         else:
             verdict.ok = False
 
@@ -616,7 +638,8 @@ class BaseChecker:
 
     def check_certification_page(self) -> Verdict:
         verdict = Verdict(position="Лист утверждения", standard="ГОСТ 19.104-78")
-        first_page = self.doc.extract_pages(0, 1)
+        cloned = self.doc.clone()
+        first_page = cloned.extract_pages(0, 1)
         paragraphs = first_page.first_section.body.paragraphs
 
         proper_tile_index = BaseChecker.index_paragraph(paragraphs, r"\s*лист.+утверждения\s*")
@@ -625,18 +648,18 @@ class BaseChecker:
             verdict.add_message('Нет надписи "Лист утверждения" на первом листе.')
         elif (proper_tile_index + 1) < paragraphs.count:
             identifier = paragraphs[proper_tile_index + 1].to_string(aw.SaveFormat.TEXT)
-            if self.check_identifier(
+            if self._check_identifier(
                     identifier,
                     page_type="ЛУ"
             ):
-                verdict += self.check_id_similarity(identifier)
+                verdict += self._check_id_similarity(identifier)
             else:
                 verdict.add_message(
                     "Идентификатор документа имеет неверный формат, отсутствует или находится в неположенном месте."
                 )
 
         last_paragraph_text = paragraphs[-1].as_paragraph().to_string(aw.SaveFormat.TEXT)
-        verdict += BaseChecker.check_bottom_year(last_paragraph_text)
+        verdict += BaseChecker._check_bottom_year(last_paragraph_text)
 
         has_registration_table, verdict = BaseChecker._find_registration_table(first_page, verdict)
         if not has_registration_table:
@@ -650,7 +673,7 @@ class BaseChecker:
         for node in page.first_section.body.tables:
             table = node.as_table()
             if table.horizontal_anchor == aw.drawing.RelativeHorizontalPosition.PAGE:
-                verdict += BaseChecker.check_registration_and_storing(table)
+                verdict += BaseChecker._check_registration_and_storing(table)
                 has_registration_table = True
                 break
 
@@ -660,7 +683,6 @@ class BaseChecker:
         verdict = Verdict(position="Титульный лист", standard="ГОСТ 19.104-78")
         title_page = self.doc.extract_pages(1, 1)
         paragraphs = title_page.first_section.body.paragraphs
-
         proper_tile_index = BaseChecker.index_paragraph(paragraphs, r"\s*листов\s*\d+")
 
         if proper_tile_index == -1:
@@ -673,11 +695,11 @@ class BaseChecker:
 
             if (proper_tile_index - 1) >= 0:
                 identifier = paragraphs[proper_tile_index - 1].to_string(aw.SaveFormat.TEXT)
-                if self.check_identifier(
+                if self._check_identifier(
                         identifier,
                         page_type=None
                 ):
-                    verdict += self.check_id_similarity(identifier)
+                    verdict += self._check_id_similarity(identifier)
                 else:
                     verdict.add_message(
                         "Идентификатор документа имеет неверный формат, отсутствует или находится в неположенном месте."
@@ -691,18 +713,18 @@ class BaseChecker:
         if re.match(r"\s*УТВЕРЖД[ЁЕ]Н\s*", first_paragraph_text):
             if 1 < paragraphs.count:
                 identifier = paragraphs[1].to_string(aw.SaveFormat.TEXT)
-                if self.check_identifier(
+                if self._check_identifier(
                         identifier,
                         page_type="ЛУ"
                 ):
-                    verdict += self.check_id_similarity(identifier)
+                    verdict += self._check_id_similarity(identifier)
                 else:
                     verdict.add_message("Отсутствует или некорректен идентификатор листа утверждения")
         else:
             verdict.add_message("Отсутствует пометка об утверждении")
 
         last_paragraph_text = paragraphs[-1].as_paragraph().to_string(aw.SaveFormat.TEXT)
-        verdict += BaseChecker.check_bottom_year(last_paragraph_text)
+        verdict += BaseChecker._check_bottom_year(last_paragraph_text)
 
         return verdict
 
@@ -719,7 +741,7 @@ class BaseChecker:
         return proper_tile_index
 
     @staticmethod
-    def check_bottom_year(bottom_text: str) -> Verdict:
+    def _check_bottom_year(bottom_text: str) -> Verdict:
         verdict = Verdict(ok=True, standard="ГОСТ.601-78")
         if re.match(r".*\d{4}.*", bottom_text.strip()):
             if "г" in bottom_text.lower() or "год" in bottom_text.lower():
@@ -732,7 +754,7 @@ class BaseChecker:
         return verdict
 
     @staticmethod
-    def check_registration_and_storing(registration_table: aw.tables.Table) -> Verdict:
+    def _check_registration_and_storing(registration_table: aw.tables.Table) -> Verdict:
         verdict = Verdict(standard="ГОСТ.601-78")
         if registration_table.rows.count != 5:
             verdict.add_message("В таблице регистрации и хранения должно быть 5 колонок.")
@@ -756,7 +778,7 @@ class BaseChecker:
 
         return verdict
 
-    def check_identifier(self, identifier: str, short=False, page_type=None, exact=True):
+    def _check_identifier(self, identifier: str, short=False, page_type=None, exact=True):
         if page_type is None:
             page_type = ""
         else:
@@ -783,7 +805,7 @@ class BaseChecker:
                 identifier
             )
 
-    def check_id_similarity(self, identifier: str) -> Verdict:
+    def _check_id_similarity(self, identifier: str) -> Verdict:
         verdict = Verdict()
         clean_id = re.search(r"[A-Z]{2}\.\d+\.\d\d\.\d\d-\d\d", identifier)[0]
         if clean_id:

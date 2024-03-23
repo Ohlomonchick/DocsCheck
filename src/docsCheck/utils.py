@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 from enum import Enum
 
@@ -13,7 +13,7 @@ class Message:
     text: str
     position: str
     standard: str
-    message_type: MessageTypes
+    message_type: MessageTypes = field(repr=False)
 
 
 class Verdict:

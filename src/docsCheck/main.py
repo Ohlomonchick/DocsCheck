@@ -15,10 +15,7 @@ from checker import BaseChecker
 checker = BaseChecker(doc)
 
 
-verdict = checker.check_table_of_contents()
-verdict += checker.check_page_margins()
-verdict += checker.check_paragraphs()
-verdict += checker.check_lists()
-verdict += checker.check_chapters()
+
+verdict = checker.main_check()
 for message in verdict.messages:
     print(message)
