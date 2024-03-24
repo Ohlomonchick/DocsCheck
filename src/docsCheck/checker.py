@@ -17,8 +17,8 @@ def is_empty_string(string: str):
 class BaseChecker:
     doc: aw.Document
     FLOAT_DELTA: float = 1e-3
-    doc_type: str = "ТЗ"
-    doc_type_id: str = "01-1"
+    doc_type: str = ""
+    doc_type_id: str = ""
     doc_identifier: str = None
 
     chapters: List[str] = ["аннотация", "содержание", "лист регистрации изменений"]
@@ -815,3 +815,18 @@ class BaseChecker:
                 verdict.add_message("Несовпадение идентификатора документа.")
 
         return verdict
+
+
+class TechTaskChecker(BaseChecker):
+    doc_type: str = "ТЗ"
+    doc_type_id: str = "01-1"
+    chapters: List[str] = [
+        "аннотация", "введение", "содержание",
+        "лист регистрации изменений", "назначение разработки",
+    ]
+    doc_standard: str = "ГОСТ 19.106-78"
+
+
+allowed_checkers = {
+    "ТЗ": TechTaskChecker
+}
