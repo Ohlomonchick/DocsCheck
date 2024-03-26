@@ -1,5 +1,7 @@
 /venv/
 /.venv/
-/src/docs-check/samples
-/src/docs-check/to_view
+/samples
+/to_view
 /dist/
+pypi_token.txt
+poetry.lock
