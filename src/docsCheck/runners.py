@@ -15,8 +15,12 @@ def run_check(doc_path, doc_type=None, licence_path=None):
     except RuntimeError as err:
         print("\nThere was an error setting the license:", err)
         return
+    try:
+        doc = aw.Document(doc_path)
+    except RuntimeError as err:
+        print("Невозможно открыть документ. Возможно, он используется другим процессом")
+        return
 
-    doc = aw.Document(doc_path)
     if doc_type is None:
         check = checker.BaseChecker(doc)
     else:

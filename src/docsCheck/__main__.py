@@ -58,4 +58,6 @@ def main():
             return
 
     verdict = runners.run_check(doc_path, doc_type)
+    if verdict is None:
+        return
     print_verdict(verdict)
