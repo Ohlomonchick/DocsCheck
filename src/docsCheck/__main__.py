@@ -1,7 +1,8 @@
 import os
 import sys
 from docsCheck import runners
-
+from prettytable import PrettyTable
+from docsCheck.checker import allowed_checkers
 
 HELP = """ИСПОЛЬЗОВАНИЕ:
 docsCheck <path_to_docx> <doc_type>
@@ -11,13 +12,27 @@ path_to_docx - абсолютный или относительный путь �
 doc_type - один из доступных типов документов (опционально)
 
 Доступные типы документов:
-ТЗ - техническое задание
+ОБЩЕЕ - Только общая проверка (по умолчанию),
+ТЗ - Техническое задание,
+РО - Руководство оператора,
+ПЗ - Пояснительная записка
+
+Помощь:
+docsCheck --help
+
 """
 
 
 def print_verdict(verdict):
+    row_names = ["Позиция", "Стандарт", "Описание"]
+    table = PrettyTable(row_names, border=True)
+    rows = []
     for message in verdict.messages:
-        print(message)
+        rows.append([message.position, message.standard, message.text])
+    table.add_rows(rows)
+    table.align["Описание"] = "l"
+    table.max_width["Описание"] = 80
+    print(table)
 
 
 def main():
@@ -46,7 +61,7 @@ def main():
         print("Файл должен иметь расширение docx")
         return
 
-    allowed_doc_types = ["ТЗ"]
+    allowed_doc_types = allowed_checkers.keys()
 
     doc_type = None
     if len(args) == 2:

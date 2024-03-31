@@ -159,7 +159,7 @@ class UnitChecks:
 
     @staticmethod
     def _check_bottom_year(bottom_text: str) -> Verdict:
-        verdict = Verdict(ok=True, standard="ГОСТ.601-78")
+        verdict = Verdict(ok=True, standard="ГОСТ 19.601-78")
         if re.match(r".*\d{4}.*", bottom_text.strip()):
             if "г" in bottom_text.lower() or "год" in bottom_text.lower():
                 verdict.add_message("Строка с указанием года издания (утверждения) не должна содержать 'г' или 'год'.")
@@ -530,7 +530,7 @@ class BaseChecker(NonTableOfContentsChecker):
     numbers_to_names = None
 
     def main_check(self) -> Verdict:
-        main_verdict = Verdict(position="Весь документ.", standard="ЕСПД")
+        main_verdict = Verdict(position="Весь документ.", standard="ГОСТ 19.103-78")
 
         main_verdict += self.check_page_margins()
         main_verdict += self.check_certification_page()
@@ -845,7 +845,45 @@ class TechTaskChecker(BaseChecker):
     doc_standard: str = "ГОСТ 19.106-78"
 
 
+class OperatorManualChecker(BaseChecker):
+    doc_type: str = "34"
+    doc_type_id: str = "01-1"
+    chapters: List[str] = [
+        "содержание",
+        "лист регистрации изменений",
+        "назначение программы",
+        "условия выполнения программы",
+        "выполнение программы",
+        "сообщения автору"
+    ]
+    doc_standard: str = "ГОСТ 19.505-79"
+
+
+class ExplanatoryNoteChecker(BaseChecker):
+    doc_type: str = "81"
+    doc_type_id: str = "01-1"
+    chapters: List[str] = [
+        "содержание",
+        "лист регистрации изменений",
+        "введение",
+        "назначение и область применения",
+        "технические характеристики",
+        "ожидаемые технико-экономические показатели",
+        "источники, использованные при разработке"
+    ]
+    doc_standard: str = "ГОСТ 19.404-79"
+
+
 allowed_checkers = {
     "ОБЩЕЕ": BaseChecker,
-    "ТЗ": TechTaskChecker
+    "ТЗ": TechTaskChecker,
+    "РО": OperatorManualChecker,
+    "ПЗ": ExplanatoryNoteChecker,
+}
+
+full_allowed_checkers_name = {
+    "ОБЩЕЕ": "Только общая проверка",
+    "ТЗ": "Техническое задание",
+    "РО": "Руководство оператора",
+    "ПЗ": "Пояснительная записка"
 }

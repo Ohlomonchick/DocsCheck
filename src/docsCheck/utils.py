@@ -57,6 +57,8 @@ class Verdict:
             for i in range(len(other.messages)):
                 if not other.messages[i].position:
                     other.messages[i].position = self.position
+                if not other.messages[i].standard and self.standard:
+                    other.messages[i].standard = self.standard
 
         self.messages += other.messages
         if not other.ok:

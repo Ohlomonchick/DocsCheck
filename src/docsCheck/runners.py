@@ -17,13 +17,20 @@ def run_check(doc_path, doc_type=None, licence_path=None):
         return
     try:
         doc = aw.Document(doc_path)
-    except RuntimeError as err:
+    except RuntimeError:
         print("Невозможно открыть документ. Возможно, он используется другим процессом")
         return
+    except Exception:
+        print("Файл повреждён.")
+        return
 
-    if doc_type is None:
-        check = checker.BaseChecker(doc)
-    else:
-        check = checker.allowed_checkers[doc_type](doc)
+    try:
+        if doc_type is None:
+            check = checker.BaseChecker(doc)
+        else:
+            check = checker.allowed_checkers[doc_type](doc)
+    except RuntimeError:
+        print("Невозможно проверить документ.")
+        return
 
     return check.main_check()
