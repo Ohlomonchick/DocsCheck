@@ -172,7 +172,7 @@ class UnitChecks:
 
     @staticmethod
     def _check_registration_and_storing(registration_table: aw.tables.Table) -> Verdict:
-        verdict = Verdict(standard="ГОСТ.601-78")
+        verdict = Verdict(standard="ГОСТ 19.601-78")
         if registration_table.rows.count != 5:
             verdict.add_message("В таблице регистрации и хранения должно быть 5 колонок.")
             return verdict
@@ -346,7 +346,7 @@ class NonTableOfContentsChecker(UnitChecks):
         return verdict
 
     def check_line_spacing(self):
-        verdict = Verdict(position="Весь документ")
+        verdict = Verdict(position="Весь документ", standard="ГОСТ 19.103-78")
 
         layout_collector = aw.layout.LayoutCollector(self.doc)
         page_set = set()
@@ -367,7 +367,7 @@ class NonTableOfContentsChecker(UnitChecks):
         for page_number in page_set:
             verdict.add_message(
                 "Используется некорректный межстрочный интервал",
-                position=f"Страница {page_number}"
+                position=f"Страница {page_number}",
             )
 
         return verdict
@@ -530,7 +530,7 @@ class BaseChecker(NonTableOfContentsChecker):
     numbers_to_names = None
 
     def main_check(self) -> Verdict:
-        main_verdict = Verdict(position="Весь документ.", standard="ГОСТ 19.103-78")
+        main_verdict = Verdict(position="Весь документ", standard="ГОСТ 19.103-78")
 
         main_verdict += self.check_page_margins()
         main_verdict += self.check_certification_page()
@@ -832,7 +832,7 @@ class BaseChecker(NonTableOfContentsChecker):
 
 class TechTaskChecker(BaseChecker):
     doc_type: str = "ТЗ"
-    doc_type_id: str = "01-1"
+    doc_type_id: str = "05"
     chapters: List[str] = [
         "аннотация", "введение", "содержание",
         "лист регистрации изменений", "назначение разработки",
@@ -874,16 +874,44 @@ class ExplanatoryNoteChecker(BaseChecker):
     doc_standard: str = "ГОСТ 19.404-79"
 
 
+class TestProgramAndMethods(BaseChecker):
+    doc_type: str = "51"
+    doc_type_id: str = "01-1"
+    chapters: List[str] = [
+        "содержание",
+        "лист регистрации изменений",
+        "объект испытаний",
+        "цель испытаний",
+        "требования к программной документации",
+        "состав и порядок испытаний",
+        "методы испытаний"
+    ]
+    doc_standard: str = "ГОСТ 19.301-79"
+
+
+class ProgramText(BaseChecker):
+    doc_type: str = "12"
+    doc_type_id: str = "01-1"
+    chapters: List[str] = [
+        "лист регистрации изменений",
+    ]
+    doc_standard: str = "ГОСТ 19.401-78"
+
+
 allowed_checkers = {
     "ОБЩЕЕ": BaseChecker,
     "ТЗ": TechTaskChecker,
     "РО": OperatorManualChecker,
     "ПЗ": ExplanatoryNoteChecker,
+    "ПИМИ": TestProgramAndMethods,
+    "ТП": ProgramText
 }
 
 full_allowed_checkers_name = {
     "ОБЩЕЕ": "Только общая проверка",
     "ТЗ": "Техническое задание",
     "РО": "Руководство оператора",
-    "ПЗ": "Пояснительная записка"
+    "ПЗ": "Пояснительная записка",
+    "ПИМИ": "Программа и методика испытаний",
+    "ТП": "Текст программы"
 }

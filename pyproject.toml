@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "docsCheck"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["Dmitry Proskurin <proskurin.dima16@gmail.com>"]
 readme = "README.md"
